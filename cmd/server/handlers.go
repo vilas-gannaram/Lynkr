@@ -138,7 +138,11 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build response...
-	fullURL := fmt.Sprintf("https://%s/%s", r.Host, shortKey)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	fullURL := fmt.Sprintf("%s://%s/%s", scheme, r.Host, shortKey)
 	h.codex.writeJSON(w, http.StatusAccepted, fullURL)
 }
 
