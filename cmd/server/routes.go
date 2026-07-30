@@ -30,6 +30,7 @@ func (rt *Routes) Setup() http.Handler {
 
 	mux.Use(middleware.Heartbeat("/ping"))
 
+	mux.Get("/", rt.Handlers.HomePage)
 	mux.Post("/shorten", rt.Handlers.ShortenURL)
 	mux.Get("/{shortcode}", rt.Handlers.Redirect)
 	mux.Get("/urls", rt.Handlers.ListURLs)

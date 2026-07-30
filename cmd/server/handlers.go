@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"net/url"
@@ -34,6 +35,37 @@ type ShortenRequest struct {
 // Base32-style alpha-numeric characters (without O, 0, I, 1, L, u).
 // Using go-nanoid for random string generation
 var canonicNanoid, _ = nanoid.CustomASCII("abcdefghjkmnpqrstvwxyz23456789", 8)
+
+// @Method: GET
+// @Route: /
+// @Desc: Returns Home page
+func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
+	partials := []string{
+		"./cmd/server/templates/partials/header.gohtml",
+		"./cmd/server/templates/partials/footer.gohtml",
+	}
+
+	layouts := []string{
+		"./cmd/server/templates/layouts/base.gohtml",
+	}
+
+	page := "./cmd/server/templates/pages/home.gohtml"
+
+	templateSlice := append([]string{page}, layouts...)
+	templateSlice = append(templateSlice, partials...)
+
+	tmpl, err := template.ParseFiles(templateSlice...)
+	if err != nil {
+		log.Println("Error parsing template:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tmpl.Execute(w, nil); err != nil {
+		log.Println("Error rendering template:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
 
 // @Method: POST
 // @Route: /shorten
