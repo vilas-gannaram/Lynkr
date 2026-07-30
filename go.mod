@@ -1,4 +1,4 @@
-module github.com/vilas-gannaram/url-shortener
+module github.com/vilas-gannaram/Lynkr
 
 go 1.25.0
 
