@@ -1,0 +1,89 @@
+{{template "base" .}}
+
+{{define "content" }}
+  <div class="min-h-[90dvh]">
+
+  	{{/* Hero Section */}}
+	<div class="hero bg-base-200 min-h-[350px] max-h-[720px]">
+		<div class="hero-content text-center">
+			<div class="w-full max-w-xl">
+				<h1 class="text-5xl font-bold">Lynkr</h1>
+				<p class="py-6 text-base-content/70">
+					Paste a long URL, get a short one back instantly.
+				</p>
+
+				{{/* InputForm */}}
+				<form id="shorten-form" class="flex flex-col sm:flex-row gap-2 justify-center">
+					<label class="input validator w-full sm:w-auto sm:flex-1">
+						<svg class="h-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+							<g
+							stroke-linejoin="round"
+							stroke-linecap="round"
+							stroke-width="2.5"
+							fill="none"
+							stroke="currentColor"
+							>
+							<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+							<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+							</g>
+						</svg>
+						<input
+							id="long-url-input"
+							type="url"
+							required
+							placeholder="https://your-long-url.com/..."
+							pattern="^(https?://)?([a-zA-Z0-9]([a-zA-Z0-9\-].*[a-zA-Z0-9])?\.)+[a-zA-Z].*$"
+							title="Must be valid URL"
+						/>
+					</label>
+
+					<button type="submit" class="btn btn-primary">Shorten</button>
+				</form>
+				<p class="validator-hint text-left mt-1">Must be a valid URL</p>
+
+				{{/* Result */}}
+				<div id="shorten-result" class="hidden mt-4 flex flex-col sm:flex-row gap-2 justify-center">
+					<label class="input w-full sm:w-auto sm:flex-1">
+						<input id="short-url-output" type="text" readonly />
+					</label>
+					<button id="copy-btn" type="button" class="btn btn-outline">Copy</button>
+				</div>
+
+				<p id="shorten-error" class="text-error hidden mt-2"></p>
+			</div>
+		</div>
+	</div>
+
+
+	<div class="max-w-4xl mx-auto px-4 pb-16 mt-16">
+		{{if .}}
+			<div class="overflow-x-auto">
+				<table class="table table-zebra">
+					<thead>
+						<tr>
+							<th>#</th>
+							<th>Short URL</th>
+							<th>Original URL</th>
+							<th>Clicks</th>
+							<th>Created</th>
+						</tr>
+					</thead>
+					<tbody>
+						{{range $i, $url := .}}
+						<tr>
+							<th>{{inc $i}}</th>
+							<td><a class="link link-secondary" href="/{{$url.ShortCode}}" target="_blank">/{{$url.ShortCode}}</a></td>
+							<td class="max-w-xs truncate text-xs" title="{{$url.OriginalUrl}}">{{$url.OriginalUrl}}</td>
+							<td>{{$url.ClickCount}}</td>
+							<td>{{$url.CreatedAt.Time.Format "Jan 2, 2006"}}</td>
+						</tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+		{{else}}
+			<p class="text-center text-base-content/60">No URLs shortened yet — try the form above.</p>
+		{{end}}
+	</div>
+  </div>
+{{end}}
