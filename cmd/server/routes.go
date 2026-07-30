@@ -1,11 +1,14 @@
 package main
 
 import (
+	"io/fs"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/vilas-gannaram/Lynkr/ui"
 )
 
 type Routes struct {
@@ -29,6 +32,12 @@ func (rt *Routes) Setup() http.Handler {
 	}))
 
 	mux.Use(middleware.Heartbeat("/ping"))
+
+	staticFS, err := fs.Sub(ui.Files, "static")
+	if err != nil {
+		log.Fatalf("Could not load static assets: %v", err)
+	}
+	mux.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	mux.Get("/", rt.Handlers.HomePage)
 	mux.Post("/shorten", rt.Handlers.ShortenURL)

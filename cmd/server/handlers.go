@@ -41,7 +41,18 @@ var canonicNanoid, _ = nanoid.CustomASCII("abcdefghjkmnpqrstvwxyz23456789", 8)
 // @Route: /
 // @Desc: Returns Home page
 func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFS(
+	urls, err := h.conn.Queries.ListURL(r.Context())
+	if err != nil {
+		log.Println("Error fetching urls:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	funcMap := template.FuncMap{
+		"inc": func(i int) int { return i + 1 },
+	}
+
+	tmpl, err := template.New("home.gohtml").Funcs(funcMap).ParseFS(
 		ui.Files,
 		"html/pages/home.gohtml",
 		"html/layouts/base.gohtml",
@@ -54,7 +65,7 @@ func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tmpl.Execute(w, nil); err != nil {
+	if err := tmpl.Execute(w, urls); err != nil {
 		log.Println("Error rendering template:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
