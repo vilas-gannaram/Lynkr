@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaevor/go-nanoid"
 	"github.com/vilas-gannaram/Lynkr/internal/database"
+	"github.com/vilas-gannaram/Lynkr/ui"
 )
 
 type Data struct {
@@ -40,21 +41,13 @@ var canonicNanoid, _ = nanoid.CustomASCII("abcdefghjkmnpqrstvwxyz23456789", 8)
 // @Route: /
 // @Desc: Returns Home page
 func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
-	partials := []string{
-		"./cmd/server/templates/partials/header.gohtml",
-		"./cmd/server/templates/partials/footer.gohtml",
-	}
-
-	layouts := []string{
-		"./cmd/server/templates/layouts/base.gohtml",
-	}
-
-	page := "./cmd/server/templates/pages/home.gohtml"
-
-	templateSlice := append([]string{page}, layouts...)
-	templateSlice = append(templateSlice, partials...)
-
-	tmpl, err := template.ParseFiles(templateSlice...)
+	tmpl, err := template.ParseFS(
+		ui.Files,
+		"html/pages/home.gohtml",
+		"html/layouts/base.gohtml",
+		"html/partials/header.gohtml",
+		"html/partials/footer.gohtml",
+	)
 	if err != nil {
 		log.Println("Error parsing template:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
