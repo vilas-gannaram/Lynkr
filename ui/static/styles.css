@@ -1,7 +1,8 @@
-@import 'tailwindcss';
+/* @import 'tailwindcss';
 @plugin "daisyui" {
-	themes:
-		light --default,
-		dark --prefersdark,
-		cupcake;
+	themes: all;
+} */
+
+:root {
+	font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
 }

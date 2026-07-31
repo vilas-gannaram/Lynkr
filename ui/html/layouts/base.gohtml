@@ -1,24 +1,24 @@
 {{define "base" }}
     <!doctype html>
 
-    <html lang="en">
+    <html lang="en"  class="bg-base-100 text-base-content">
 
         {{template "header" .}}
 
-        <body>
-
-            {{block "content" .}}
-
-            {{end}}
+        <body data-theme="sunset" class="min-h-screen">
+            <div class="min-h-screen flex flex-col">
+                {{block "content" .}}
+                
+                {{end}}
+                
+                {{template "footer" .}}
+            </div>
 
             {{block "js" .}}
 
             {{end}}
 
-            {{template "footer" .}}
-
             <script src="/static/script.js" defer></script>
-
         </body>
     </html>
 
