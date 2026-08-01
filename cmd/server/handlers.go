@@ -27,6 +27,7 @@ type Data struct {
 type Handlers struct {
 	conn  *Data
 	codex *Codex
+	cache *Cache
 }
 
 type ShortenRequest struct {
@@ -97,6 +98,7 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var shortKey string
+	var created database.Url
 	var success bool
 	var lastErr error
 
@@ -112,7 +114,7 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 
 		// 2. Try the insert
 		qtx := h.conn.Queries.WithTx(tx)
-		_, err = qtx.CreateURL(ctx, database.CreateURLParams{
+		created, err = qtx.CreateURL(ctx, database.CreateURLParams{
 			ShortCode:   shortKey,
 			OriginalUrl: requestPayload.LongURL,
 		})
@@ -137,6 +139,9 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Warm the cache so the first redirect doesn't miss
+	h.cache.SetURL(ctx, created.ShortCode, created.ID, created.OriginalUrl)
+
 	// Build response...
 	scheme := "http"
 	if r.TLS != nil {
@@ -155,17 +160,23 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	isFakeRequest := strings.Contains(purpose, "prefetch") || strings.Contains(purpose, "prerender")
 
 	shortKey := chi.URLParam(r, "shortcode")
-
-	// Fetching the mapping from DB
 	ctx := r.Context()
-	urlMapping, err := h.conn.Queries.GetURLByCode(ctx, shortKey)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.NotFound(w, r)
+
+	// Cache-aside: try Redis first, only fall back to the DB on a miss
+	urlID, originalURL, hit := h.cache.GetURL(ctx, shortKey)
+	if !hit {
+		urlMapping, err := h.conn.Queries.GetURLByCode(ctx, shortKey)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+
+		urlID, originalURL = urlMapping.ID, urlMapping.OriginalUrl
+		h.cache.SetURL(context.Background(), shortKey, urlID, originalURL)
 	}
 
 	// Incrementing the count in background, making the redirect faster
@@ -177,11 +188,11 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Println("Error updating stats:", err)
 			}
-		}(urlMapping.ID)
+		}(urlID)
 	}
 
 	// Redirecting to the original URL
-	http.Redirect(w, r, urlMapping.OriginalUrl, http.StatusFound)
+	http.Redirect(w, r, originalURL, http.StatusFound)
 }
 
 // @Method: GET

@@ -9,6 +9,7 @@ Core features:
 - Redirect `/{shortcode}` to the original URL
 - Track click counts per short URL (via a background stats upsert on redirect)
 - Server-rendered home page listing all shortened URLs and their stats
+- Redis cache-aside layer in front of the redirect lookup (optional — falls back to Postgres if unset/unreachable)
 
 ## 2. Repo structure
 
@@ -20,6 +21,7 @@ Core features:
 │       ├── env.go          # Env: loads/validates DATABASE_URL, PORT from .env
 │       ├── handlers.go     # Data + Handlers: DB deps + HTTP handler methods (HomePage, ShortenURL, Redirect, ListURLs)
 │       ├── routes.go       # Routes: chi router setup, middleware, route table
+│       ├── cache.go        # Cache: Redis cache-aside for shortcode -> URL lookups (no-op if REDIS_URL unset)
 │       └── helpers.go      # Codex: shared JSON read/write/error helpers
 │
 ├── ui/
@@ -53,9 +55,10 @@ Within `cmd/server`, the app is wired as a small dependency graph, all hanging o
 
 ```
 Config
-├── Env      — loaded env vars (DATABASE_URL, PORT)
+├── Env      — loaded env vars (DATABASE_URL, PORT, REDIS_URL)
 ├── Data     — *database.Queries + *pgxpool.Pool
-├── Handlers — HTTP handler methods, depends on Data + Codex
+├── Cache    — Redis client for shortcode -> URL lookups, wired into Handlers
+├── Handlers — HTTP handler methods, depends on Data + Cache + Codex
 ├── Routes   — chi router, depends on Handlers
 └── Codex    — JSON read/write/error helpers
 ```
@@ -77,9 +80,17 @@ sqlc compile
 ```
 Run `sqlc generate` any time you change `sql/schema.sql` or `sql/queries.sql`. If `sqlc` isn't on your `PATH` after `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`, it's likely sitting in `$(go env GOPATH)/bin` — add that to `PATH`, or call it directly from there.
 
-## 4. Getting started
+## 4. Caching — Redis (cache-aside)
 
-**Prerequisites:** Go 1.25+, a Postgres database (this project uses Supabase), `sqlc`, and optionally `air` for hot reload.
+**What it does:** `cmd/server/cache.go` wraps a Redis client used only for the redirect lookup path (`shortcode -> {id, original_url}`). `Redirect` checks the cache first and only queries Postgres on a miss; `ShortenURL` writes through to the cache on creation so the first redirect doesn't miss. Entries expire after 24h (`urlCacheTTL`).
+
+**Why this path:** redirects are the hottest, most read-skewed request in the app, and the mapping is effectively immutable once created, so it's the highest-value thing to cache. Click-count writes and the `/urls` listing are intentionally left uncached.
+
+**Configuration:** set `REDIS_URL` (e.g. `redis://user:password@host:port`). If it's unset, or Redis can't be reached at startup, the app logs a warning and runs with caching disabled — nothing else changes. This project is deployed on Render, whose managed Redis-compatible offering is called "Key Value".
+
+## 5. Getting started
+
+**Prerequisites:** Go 1.25+, a Postgres database (this project uses Supabase), `sqlc`, and optionally `air` for hot reload and Redis for caching.
 
 ```bash
 # 1. Clone and install Go deps
@@ -97,6 +108,7 @@ go mod download
 cp .env.example .env   # if present, otherwise create .env manually:
 #   DATABASE_URL=postgres://user:password@host:port/dbname
 #   PORT=8080
+#   REDIS_URL=redis://user:password@host:port   # optional, caching disabled if unset
 
 # 4. Generate the DB layer (only needed if internal/database/ is missing or sql/*.sql changed)
 sqlc generate

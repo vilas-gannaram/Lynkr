@@ -10,6 +10,7 @@ import (
 type Env struct {
 	DatabaseURL string
 	Port        string
+	RedisURL    string
 }
 
 func (env *Env) LoadEnv() {
@@ -29,4 +30,6 @@ func (env *Env) LoadEnv() {
 
 	env.DatabaseURL = dbURL
 	env.Port = port
+	// Optional: caching layer is disabled if unset, see cache.go
+	env.RedisURL = os.Getenv("REDIS_URL")
 }

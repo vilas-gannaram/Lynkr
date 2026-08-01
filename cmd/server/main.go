@@ -36,8 +36,11 @@ func main() {
 		log.Fatalf("Could not connect to Supabase: %v", err)
 	}
 
+	cache := NewCache(env.RedisURL)
+	defer cache.Close()
+
 	data := &Data{Queries: database.New(pool), Pool: pool}
-	handlers := &Handlers{conn: data, codex: codex}
+	handlers := &Handlers{conn: data, codex: codex, cache: cache}
 	routes := &Routes{Handlers: handlers}
 
 	app := Config{Data: data, Handlers: handlers, Routes: routes, Codex: codex, Env: env}
