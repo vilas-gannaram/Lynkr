@@ -2,13 +2,13 @@
 
 ## 1. What this app is
 
-Lynkr is a URL shortener built to learn Go fundamentals and system design by building something real, rather than following a toy tutorial. It started with a React frontend calling a JSON API, and is now being reorganized around a plain Go backend (chi router + PostgreSQL via Supabase), with server-rendered Go templates replacing the separate frontend.
+Lynkr is a URL shortener built to learn Go fundamentals and system design by building something real, rather than following a toy tutorial. It's a plain Go backend (chi router + PostgreSQL via Supabase) with server-rendered Go templates for the UI.
 
 Core features:
 - Shorten a long URL into a short, random alias (`go-nanoid`-generated code)
-- Redirect `/{shortKey}` to the original URL
+- Redirect `/{shortcode}` to the original URL
 - Track click counts per short URL (via a background stats upsert on redirect)
-- List all shortened URLs and their stats
+- Server-rendered home page listing all shortened URLs and their stats
 
 ## 2. Repo structure
 
@@ -18,10 +18,17 @@ Core features:
 │   └── server/            # the `main` package — the actual binary/entrypoint
 │       ├── main.go        # wiring: env, db pool, Config struct, http.Server
 │       ├── env.go          # Env: loads/validates DATABASE_URL, PORT from .env
-│       ├── handlers.go     # Data + Handlers: DB deps + HTTP handler methods (ShortenURL, Redirect, ListURLs)
+│       ├── handlers.go     # Data + Handlers: DB deps + HTTP handler methods (HomePage, ShortenURL, Redirect, ListURLs)
 │       ├── routes.go       # Routes: chi router setup, middleware, route table
-│       ├── helpers.go      # Codex: shared JSON read/write/error helpers
-│       └── templates/      # Go html/template files (server-rendered UI)
+│       └── helpers.go      # Codex: shared JSON read/write/error helpers
+│
+├── ui/
+│   ├── ui.go               # embed.FS exposing html/ and static/ to the server
+│   ├── html/
+│   │   ├── layouts/        # base.gohtml — the shared page shell
+│   │   ├── pages/          # home.gohtml — the home page template
+│   │   └── partials/       # header.gohtml, footer.gohtml
+│   └── static/              # script.js, styles.css served at /static/*
 │
 ├── internal/
 │   └── database/           # sqlc-generated code — do not hand-edit
@@ -55,13 +62,7 @@ Config
 
 ## 3. sqlc — benefits & commands
 
-**What it does:** sqlc reads plain SQL (`sql/schema.sql` for table shape, `sql/queries.sql` for queries annotated with `-- name: X :one/:many/:exec`) and generates type-safe Go code — no ORM, no reflection, no ORM-generated queries. You write real SQL; sqlc turns it into Go functions and structs.
-
-**Why it's used here:**
-- **Type safety** — `Queries.CreateURL(ctx, CreateURLParams{...})` is a real Go function with real Go types; a typo in a column name fails at `sqlc generate` or compile time, not at runtime in production.
-- **No magic** — the SQL you write is the SQL that runs. Easy to reason about performance, indexes, and query plans since there's no query builder translating your intent.
-- **Structs match the DB** — `models.go` is regenerated straight from `schema.sql`, so Go structs and table columns can't silently drift apart.
-- **Good fit for learning Go/system design** — forces you to actually write and understand SQL, while still getting compile-time safety on the Go side.
+**What it does:** sqlc reads plain SQL (`sql/schema.sql` for table shape, `sql/queries.sql` for queries annotated with `-- name: X :one/:many/:exec`) and generates type-safe Go code — no ORM, no reflection, no query builder. `internal/database/` is the generated output: `Queries.CreateURL(ctx, CreateURLParams{...})` is a real Go function with real Go types, and `models.go` is regenerated straight from `schema.sql`.
 
 **Commands:**
 ```bash
@@ -110,6 +111,6 @@ curl -X POST http://localhost:8080/shorten \
   -H "Content-Type: application/json" \
   -d '{"longURL": "https://example.com"}'
 
-curl -L http://localhost:8080/<shortKey>   # redirects to the original URL
+curl -L http://localhost:8080/<shortcode>  # redirects to the original URL
 curl http://localhost:8080/urls            # lists all shortened URLs
 ```
