@@ -176,7 +176,7 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 		}
 
 		urlID, originalURL = urlMapping.ID, urlMapping.OriginalUrl
-		h.cache.SetURL(context.Background(), shortKey, urlID, originalURL)
+		go h.cache.SetURL(context.Background(), shortKey, urlID, originalURL)
 	}
 
 	// Incrementing the count in background, making the redirect faster
