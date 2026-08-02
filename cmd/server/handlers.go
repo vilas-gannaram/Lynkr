@@ -139,8 +139,9 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Warm the cache so the first redirect doesn't miss
-	h.cache.SetURL(ctx, created.ShortCode, created.ID, created.OriginalUrl)
+	// Warm the cache so the first redirect doesn't miss. Done in the background
+	// so a slow/degraded Redis write doesn't delay the API response.
+	go h.cache.SetURL(context.Background(), created.ShortCode, created.ID, created.OriginalUrl)
 
 	// Build response...
 	scheme := "http"
