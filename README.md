@@ -44,7 +44,8 @@ Core features:
 │
 ├── sqlc.yaml               # tells sqlc which files to read and where to generate code
 ├── .air.toml               # hot-reload config for local dev (air)
-├── scripts/test.js         # load testing script
+├── k6-load-testing/
+│   └── test.js             # k6 load testing script (redirect endpoint)
 ├── go.mod / go.sum
 └── README.md
 ```
@@ -88,7 +89,24 @@ Run `sqlc generate` any time you change `sql/schema.sql` or `sql/queries.sql`. I
 
 **Configuration:** set `REDIS_URL` (e.g. `redis://user:password@host:port`). If it's unset, or Redis can't be reached at startup, the app logs a warning and runs with caching disabled — nothing else changes. This project is deployed on Render, whose managed Redis-compatible offering is called "Key Value".
 
-## 5. Getting started
+## 5. System performance — load testing
+
+`k6-load-testing/test.js` load-tests the redirect path (`GET /{shortcode}`) with 10 VUs / 100 iterations against the deployed instance. Two things worth distinguishing when reading the results:
+
+- **End-to-end (end goal) latency** — following the redirect through to the original page. This measures what a real user experiences, but folds in the destination site's own latency/availability, which has nothing to do with Lynkr.
+- **System latency** — measuring Lynkr's own redirect response only (`redirects: 0` in the k6 script), isolating cache/DB lookup time from the app itself.
+
+**End-to-end (following redirects to the destination page):**
+
+![End-to-end load test results](k6-load-testing/eval-endgoal-10vu-100itr.png)
+
+**System (Lynkr's redirect response only, `redirects: 0`):**
+
+![System load test results](k6-load-testing/eval-system-10vu-100itr.png)
+
+The system-only run isolates Redis cache-hit + Postgres-fallback latency from external network noise, which is the number that actually reflects the cache-aside design (see section 4).
+
+## 6. Getting started
 
 **Prerequisites:** Go 1.25+, a Postgres database (this project uses Supabase), `sqlc`, and optionally `air` for hot reload and Redis for caching.
 

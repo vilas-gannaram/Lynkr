@@ -35,9 +35,9 @@ export default function () {
 	// Pick a random key from the list
 	const key = shortkeys[Math.floor(Math.random() * shortkeys.length)];
 
-	let res = http.get(`https://lynkr-tor7.onrender.com/${key}`);
+	let res = http.get(`https://lynkr-tor7.onrender.com/${key}`, { redirects: 0 });
 
 	check(res, {
-		'final status is 200': (r) => r.status === 200,
+		'redirect status is 302': (r) => r.status === 302,
 	});
 }
