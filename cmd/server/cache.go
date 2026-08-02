@@ -20,6 +20,11 @@ type Cache struct {
 
 const urlCacheTTL = 24 * time.Hour
 
+// redisCallTimeout bounds each individual Redis call so a degraded/partitioned
+// Redis fails fast and falls back to Postgres, instead of blocking on the
+// client's much longer default ReadTimeout (3s) / DialTimeout (5s).
+const redisCallTimeout = 150 * time.Millisecond
+
 func NewCache(redisURL string) *Cache {
 	if redisURL == "" {
 		log.Println("REDIS_URL not set, running without a cache layer")
@@ -55,6 +60,9 @@ func (c *Cache) GetURL(ctx context.Context, shortCode string) (id int64, origina
 		return 0, "", false
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, redisCallTimeout)
+	defer cancel()
+
 	val, err := c.rdb.Get(ctx, "url:"+shortCode).Result()
 	if err != nil {
 		return 0, "", false
@@ -73,6 +81,9 @@ func (c *Cache) SetURL(ctx context.Context, shortCode string, id int64, original
 	if c.rdb == nil {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, redisCallTimeout)
+	defer cancel()
 
 	val := fmt.Sprintf("%d\n%s", id, originalURL)
 	if err := c.rdb.Set(ctx, "url:"+shortCode, val, urlCacheTTL).Err(); err != nil {
