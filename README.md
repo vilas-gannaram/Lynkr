@@ -9,7 +9,7 @@ Core features:
 - Server-rendered home page listing all shortened URLs and their stats
 - Redis cache-aside layer in front of the redirect lookup (optional — falls back to Postgres if unset/unreachable)
 
-## Repo structure
+## 1. Repo structure
 
 ```
 .
@@ -62,7 +62,7 @@ Config
 └── Codex    — JSON read/write/error helpers
 ```
 
-## sqlc — benefits & commands
+## 2. sqlc — benefits & commands
 
 **What it does:** sqlc reads plain SQL (`sql/schema.sql` for table shape, `sql/queries.sql` for queries annotated with `-- name: X :one/:many/:exec`) and generates type-safe Go code — no ORM, no reflection, no query builder. `internal/database/` is the generated output: `Queries.CreateURL(ctx, CreateURLParams{...})` is a real Go function with real Go types, and `models.go` is regenerated straight from `schema.sql`.
 
@@ -79,7 +79,7 @@ sqlc compile
 ```
 Run `sqlc generate` any time you change `sql/schema.sql` or `sql/queries.sql`. If `sqlc` isn't on your `PATH` after `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`, it's likely sitting in `$(go env GOPATH)/bin` — add that to `PATH`, or call it directly from there.
 
-## Caching — Redis (cache-aside)
+## 3. Caching — Redis (cache-aside)
 
 **What it does:** `cmd/server/cache.go` wraps a Redis client used only for the redirect lookup path (`shortcode -> {id, original_url}`). `Redirect` checks the cache first and only queries Postgres on a miss; `ShortenURL` writes through to the cache on creation so the first redirect doesn't miss. Entries expire after 24h (`urlCacheTTL`).
 
@@ -87,7 +87,7 @@ Run `sqlc generate` any time you change `sql/schema.sql` or `sql/queries.sql`. I
 
 **Configuration:** set `REDIS_URL` (e.g. `redis://user:password@host:port`). If it's unset, or Redis can't be reached at startup, the app logs a warning and runs with caching disabled — nothing else changes. This project is deployed on Render, whose managed Redis-compatible offering is called "Key Value".
 
-## System performance — load testing
+## 4. System performance — load testing
 
 `k6-load-testing/test.js` load-tests the redirect path (`GET /{shortcode}`) with 10 VUs / 100 iterations against the deployed instance. Two things worth distinguishing when reading the results:
 
@@ -104,7 +104,7 @@ Run `sqlc generate` any time you change `sql/schema.sql` or `sql/queries.sql`. I
 
 The system-only run isolates Redis cache-hit + Postgres-fallback latency from external network noise, which is the number that actually reflects the cache-aside design (see section 4).
 
-## Getting started
+## 5. Getting started
 
 **Prerequisites:** Go 1.25+, a Postgres database (this project uses Supabase), `sqlc`, and optionally `air` for hot reload and Redis for caching.
 
