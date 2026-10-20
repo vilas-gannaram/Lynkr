@@ -1,33 +1,46 @@
 -- name: GetURLByCode :one
-SELECT * FROM urls
-WHERE short_code = $1 LIMIT 1;
+SELECT * FROM links
+WHERE code = $1 LIMIT 1;
 
 -- name: ListURL :many
 SELECT 
-    u.id, u.short_code, u.original_url, u.created_at,
-    COALESCE(s.count, 0) AS click_count
-FROM urls u
-LEFT JOIN stats s ON u.id = s.url_id
-ORDER BY s.last_updated DESC;
+    link.id, link.code, link.target_url, link.title, link.created_at,
+    COALESCE(stat.click_count, 0) AS click_count
+FROM links link
+LEFT JOIN link_stats stat ON link.id = stat.link_id
+ORDER BY stat.last_clicked_at DESC, link.id DESC
+LIMIT sqlc.arg('limit')
+OFFSET sqlc.arg('offset');
 
 -- name: CreateURL :one
-INSERT INTO urls (short_code, original_url)
-VALUES ($1, $2)
+INSERT INTO links (code, target_url, title)
+VALUES (sqlc.arg('code'), sqlc.arg('target_url'), sqlc.narg('title'))
 RETURNING *;
 
--- name: UpsertStats :exec
-INSERT INTO stats (url_id, count)
-VALUES ($1, 1)
-ON CONFLICT (url_id)
-DO UPDATE SET 
-    count = stats.count + 1,
-    last_updated = NOW();
+-- name: UpdateURL :one
+UPDATE links
+SET target_url = sqlc.arg('target_url'),
+    title = sqlc.narg('title')
+WHERE code = sqlc.arg('code')
+RETURNING *;
 
--- name: GetStatsByCode :one
+-- name: DeleteURL :execrows
+DELETE FROM links
+WHERE code = $1;
+
+-- name: RecordClick :exec
+INSERT INTO link_stats (link_id, click_count)
+VALUES ($1, 1)
+ON CONFLICT (link_id)
+DO UPDATE SET 
+    click_count = link_stats.click_count + 1,
+    last_clicked_at = NOW();
+
+-- name: GetLinkStats :one
 SELECT 
-    u.id, u.short_code, u.original_url, u.created_at,
-    COALESCE(s.count, 0) AS click_count,
-    s.last_updated
-FROM urls u
-LEFT JOIN stats s ON u.id = s.url_id
-WHERE u.short_code = $1;
+    link.id, link.code, link.target_url, link.title, link.created_at,
+    COALESCE(stat.click_count, 0) AS click_count,
+    stat.last_clicked_at
+FROM links link
+LEFT JOIN link_stats stat ON link.id = stat.link_id
+WHERE link.code = $1;

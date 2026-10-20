@@ -12,73 +12,91 @@ import (
 )
 
 const createURL = `-- name: CreateURL :one
-INSERT INTO urls (short_code, original_url)
-VALUES ($1, $2)
-RETURNING id, short_code, original_url, created_at
+INSERT INTO links (code, target_url, title)
+VALUES ($1, $2, $3)
+RETURNING id, code, target_url, title, created_at
 `
 
 type CreateURLParams struct {
-	ShortCode   string `json:"short_code"`
-	OriginalUrl string `json:"original_url"`
+	Code      string      `json:"code"`
+	TargetUrl string      `json:"target_url"`
+	Title     pgtype.Text `json:"title"`
 }
 
-func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) (Url, error) {
-	row := q.db.QueryRow(ctx, createURL, arg.ShortCode, arg.OriginalUrl)
-	var i Url
+func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) (Link, error) {
+	row := q.db.QueryRow(ctx, createURL, arg.Code, arg.TargetUrl, arg.Title)
+	var i Link
 	err := row.Scan(
 		&i.ID,
-		&i.ShortCode,
-		&i.OriginalUrl,
+		&i.Code,
+		&i.TargetUrl,
+		&i.Title,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
-const getStatsByCode = `-- name: GetStatsByCode :one
-SELECT 
-    u.id, u.short_code, u.original_url, u.created_at,
-    COALESCE(s.count, 0) AS click_count,
-    s.last_updated
-FROM urls u
-LEFT JOIN stats s ON u.id = s.url_id
-WHERE u.short_code = $1
+const deleteURL = `-- name: DeleteURL :execrows
+DELETE FROM links
+WHERE code = $1
 `
 
-type GetStatsByCodeRow struct {
-	ID          int64              `json:"id"`
-	ShortCode   string             `json:"short_code"`
-	OriginalUrl string             `json:"original_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	ClickCount  int32              `json:"click_count"`
-	LastUpdated pgtype.Timestamptz `json:"last_updated"`
+func (q *Queries) DeleteURL(ctx context.Context, code string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteURL, code)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-func (q *Queries) GetStatsByCode(ctx context.Context, shortCode string) (GetStatsByCodeRow, error) {
-	row := q.db.QueryRow(ctx, getStatsByCode, shortCode)
-	var i GetStatsByCodeRow
+const getLinkStats = `-- name: GetLinkStats :one
+SELECT 
+    link.id, link.code, link.target_url, link.title, link.created_at,
+    COALESCE(stat.click_count, 0) AS click_count,
+    stat.last_clicked_at
+FROM links link
+LEFT JOIN link_stats stat ON link.id = stat.link_id
+WHERE link.code = $1
+`
+
+type GetLinkStatsRow struct {
+	ID            int64              `json:"id"`
+	Code          string             `json:"code"`
+	TargetUrl     string             `json:"target_url"`
+	Title         pgtype.Text        `json:"title"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ClickCount    int64              `json:"click_count"`
+	LastClickedAt pgtype.Timestamptz `json:"last_clicked_at"`
+}
+
+func (q *Queries) GetLinkStats(ctx context.Context, code string) (GetLinkStatsRow, error) {
+	row := q.db.QueryRow(ctx, getLinkStats, code)
+	var i GetLinkStatsRow
 	err := row.Scan(
 		&i.ID,
-		&i.ShortCode,
-		&i.OriginalUrl,
+		&i.Code,
+		&i.TargetUrl,
+		&i.Title,
 		&i.CreatedAt,
 		&i.ClickCount,
-		&i.LastUpdated,
+		&i.LastClickedAt,
 	)
 	return i, err
 }
 
 const getURLByCode = `-- name: GetURLByCode :one
-SELECT id, short_code, original_url, created_at FROM urls
-WHERE short_code = $1 LIMIT 1
+SELECT id, code, target_url, title, created_at FROM links
+WHERE code = $1 LIMIT 1
 `
 
-func (q *Queries) GetURLByCode(ctx context.Context, shortCode string) (Url, error) {
-	row := q.db.QueryRow(ctx, getURLByCode, shortCode)
-	var i Url
+func (q *Queries) GetURLByCode(ctx context.Context, code string) (Link, error) {
+	row := q.db.QueryRow(ctx, getURLByCode, code)
+	var i Link
 	err := row.Scan(
 		&i.ID,
-		&i.ShortCode,
-		&i.OriginalUrl,
+		&i.Code,
+		&i.TargetUrl,
+		&i.Title,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -86,23 +104,31 @@ func (q *Queries) GetURLByCode(ctx context.Context, shortCode string) (Url, erro
 
 const listURL = `-- name: ListURL :many
 SELECT 
-    u.id, u.short_code, u.original_url, u.created_at,
-    COALESCE(s.count, 0) AS click_count
-FROM urls u
-LEFT JOIN stats s ON u.id = s.url_id
-ORDER BY s.last_updated DESC
+    link.id, link.code, link.target_url, link.title, link.created_at,
+    COALESCE(stat.click_count, 0) AS click_count
+FROM links link
+LEFT JOIN link_stats stat ON link.id = stat.link_id
+ORDER BY stat.last_clicked_at DESC, link.id DESC
+LIMIT $2
+OFFSET $1
 `
 
-type ListURLRow struct {
-	ID          int64              `json:"id"`
-	ShortCode   string             `json:"short_code"`
-	OriginalUrl string             `json:"original_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	ClickCount  int32              `json:"click_count"`
+type ListURLParams struct {
+	Offset int32 `json:"offset"`
+	Limit  int32 `json:"limit"`
 }
 
-func (q *Queries) ListURL(ctx context.Context) ([]ListURLRow, error) {
-	rows, err := q.db.Query(ctx, listURL)
+type ListURLRow struct {
+	ID         int64              `json:"id"`
+	Code       string             `json:"code"`
+	TargetUrl  string             `json:"target_url"`
+	Title      pgtype.Text        `json:"title"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ClickCount int64              `json:"click_count"`
+}
+
+func (q *Queries) ListURL(ctx context.Context, arg ListURLParams) ([]ListURLRow, error) {
+	rows, err := q.db.Query(ctx, listURL, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +138,9 @@ func (q *Queries) ListURL(ctx context.Context) ([]ListURLRow, error) {
 		var i ListURLRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.ShortCode,
-			&i.OriginalUrl,
+			&i.Code,
+			&i.TargetUrl,
+			&i.Title,
 			&i.CreatedAt,
 			&i.ClickCount,
 		); err != nil {
@@ -127,16 +154,43 @@ func (q *Queries) ListURL(ctx context.Context) ([]ListURLRow, error) {
 	return items, nil
 }
 
-const upsertStats = `-- name: UpsertStats :exec
-INSERT INTO stats (url_id, count)
+const recordClick = `-- name: RecordClick :exec
+INSERT INTO link_stats (link_id, click_count)
 VALUES ($1, 1)
-ON CONFLICT (url_id)
+ON CONFLICT (link_id)
 DO UPDATE SET 
-    count = stats.count + 1,
-    last_updated = NOW()
+    click_count = link_stats.click_count + 1,
+    last_clicked_at = NOW()
 `
 
-func (q *Queries) UpsertStats(ctx context.Context, urlID int64) error {
-	_, err := q.db.Exec(ctx, upsertStats, urlID)
+func (q *Queries) RecordClick(ctx context.Context, linkID int64) error {
+	_, err := q.db.Exec(ctx, recordClick, linkID)
 	return err
+}
+
+const updateURL = `-- name: UpdateURL :one
+UPDATE links
+SET target_url = $1,
+    title = $2
+WHERE code = $3
+RETURNING id, code, target_url, title, created_at
+`
+
+type UpdateURLParams struct {
+	TargetUrl string      `json:"target_url"`
+	Title     pgtype.Text `json:"title"`
+	Code      string      `json:"code"`
+}
+
+func (q *Queries) UpdateURL(ctx context.Context, arg UpdateURLParams) (Link, error) {
+	row := q.db.QueryRow(ctx, updateURL, arg.TargetUrl, arg.Title, arg.Code)
+	var i Link
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.TargetUrl,
+		&i.Title,
+		&i.CreatedAt,
+	)
+	return i, err
 }

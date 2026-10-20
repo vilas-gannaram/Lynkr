@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaevor/go-nanoid"
 	"github.com/vilas-gannaram/Lynkr/internal/database"
@@ -30,8 +31,9 @@ type Handlers struct {
 	cache *Cache
 }
 
-type ShortenRequest struct {
-	LongURL string `json:"longURL"`
+type CreateLinkRequest struct {
+	TargetURL string      `json:"target_url"`
+	Title     pgtype.Text `json:"title"`
 }
 
 // Base32-style alpha-numeric characters (without O, 0, I, 1, L, u).
@@ -40,9 +42,27 @@ var canonicNanoid, _ = nanoid.CustomASCII("abcdefghjkmnpqrstvwxyz23456789", 8)
 
 // @Method: GET
 // @Route: /
-// @Desc: Returns Home page
+// @Desc: Returns HomePage
 func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
-	urls, err := h.conn.Queries.ListURL(r.Context())
+	limit := parseQueryInt(r, "limit", 100)
+	page := parseQueryInt(r, "page", 1)
+
+	// Ensure limits and offsets stay within reasonable bounds
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	offset := (page - 1) * limit
+
+	params := database.ListURLParams{
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	urls, err := h.conn.Queries.ListURL(r.Context(), params)
 	if err != nil {
 		log.Println("Error fetching urls:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -73,10 +93,10 @@ func (h *Handlers) HomePage(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Method: POST
-// @Route: /shorten
+// @Route: /api/links
 // @Desc: Generates and returns a shortened URL alias for a given long URL input
-func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
-	var requestPayload ShortenRequest
+func (h *Handlers) CreateLink(w http.ResponseWriter, r *http.Request) {
+	var requestPayload CreateLinkRequest
 
 	if err := h.codex.readJSON(w, r, &requestPayload); err != nil {
 		h.codex.errorJSON(w, err)
@@ -84,7 +104,7 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate URL
-	u, err := url.ParseRequestURI(requestPayload.LongURL)
+	u, err := url.ParseRequestURI(requestPayload.TargetURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		http.Error(w, "Invalid URL format", http.StatusBadRequest)
 		return
@@ -98,7 +118,7 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var shortKey string
-	var created database.Url
+	var created database.Link
 	var success bool
 	var lastErr error
 
@@ -115,8 +135,9 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		// 2. Try the insert
 		qtx := h.conn.Queries.WithTx(tx)
 		created, err = qtx.CreateURL(ctx, database.CreateURLParams{
-			ShortCode:   shortKey,
-			OriginalUrl: requestPayload.LongURL,
+			Code:      shortKey,
+			TargetUrl: requestPayload.TargetURL,
+			Title:     requestPayload.Title,
 		})
 
 		if err == nil {
@@ -141,7 +162,7 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	// Warm the cache so the first redirect doesn't miss. Done in the background
 	// so a slow/degraded Redis write doesn't delay the API response.
-	go h.cache.SetURL(context.Background(), created.ShortCode, created.ID, created.OriginalUrl)
+	go h.cache.SetLink(context.Background(), created.Code, created.ID, created.TargetUrl)
 
 	// Build response...
 	scheme := "http"
@@ -153,20 +174,20 @@ func (h *Handlers) ShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Method: GET
-// @Route: /{shortcode}
-// @Desc: Accpets the shortcode & redirect user to actual link
+// @Route: /{code}
+// @Desc: Accpets the code & redirect user to actual link
 func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 	// Check for the "Prediction" headers
 	purpose := r.Header.Get("Sec-Purpose")
 	isFakeRequest := strings.Contains(purpose, "prefetch") || strings.Contains(purpose, "prerender")
 
-	shortKey := chi.URLParam(r, "shortcode")
+	shortKey := chi.URLParam(r, "code")
 	ctx := r.Context()
 
 	// Cache-aside: try Redis first, only fall back to the DB on a miss
-	urlID, originalURL, hit := h.cache.GetURL(ctx, shortKey)
+	linkID, targetURL, hit := h.cache.GetLink(ctx, shortKey)
 	if !hit {
-		urlMapping, err := h.conn.Queries.GetURLByCode(ctx, shortKey)
+		link, err := h.conn.Queries.GetURLByCode(ctx, shortKey)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				http.NotFound(w, r)
@@ -176,32 +197,51 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		urlID, originalURL = urlMapping.ID, urlMapping.OriginalUrl
-		go h.cache.SetURL(context.Background(), shortKey, urlID, originalURL)
+		linkID, targetURL = link.ID, link.TargetUrl
+		go h.cache.SetLink(context.Background(), shortKey, linkID, targetURL)
 	}
 
 	// Incrementing the count in background, making the redirect faster
 	if !isFakeRequest {
-		go func(urlID int64) {
+		go func(linkID int64) {
 			// Use background context for background task to ensure it completes
 			// even if the original request context is cancelled.
-			err := h.conn.Queries.UpsertStats(context.Background(), urlID)
+			err := h.conn.Queries.RecordClick(context.Background(), linkID)
 			if err != nil {
 				log.Println("Error updating stats:", err)
 			}
-		}(urlID)
+		}(linkID)
 	}
 
 	// Redirecting to the original URL
-	http.Redirect(w, r, originalURL, http.StatusFound)
+	http.Redirect(w, r, targetURL, http.StatusFound)
 }
 
 // @Method: GET
-// @Route: /urls
+// @Route: /api/links
 // @Desc: Lists all the shorts & long url mappings
-func (h *Handlers) ListURLs(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) ListLinks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	results, err := h.conn.Queries.ListURL(ctx)
+
+	limit := parseQueryInt(r, "limit", 100)
+	page := parseQueryInt(r, "page", 1)
+
+	// Ensure limits and offsets stay within reasonable bounds
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	offset := (page - 1) * limit
+
+	params := database.ListURLParams{
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	results, err := h.conn.Queries.ListURL(ctx, params)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -209,4 +249,28 @@ func (h *Handlers) ListURLs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// @Method: DELETE
+// @Route: /api/links/{code}
+// @Desc: Delete a short URL
+func (h *Handlers) DeleteLink(w http.ResponseWriter, r *http.Request) {
+	shortKey := chi.URLParam(r, "code")
+	ctx := r.Context()
+
+	deleted, err := h.conn.Queries.DeleteURL(ctx, shortKey)
+	if err != nil {
+		log.Println("Error deleting link:", err)
+		h.codex.errorJSON(w, errors.New("could not delete link"), http.StatusInternalServerError)
+		return
+	}
+	if deleted == 0 {
+		h.codex.errorJSON(w, errors.New("link not found"), http.StatusNotFound)
+		return
+	}
+
+	// Evict after the DB delete so the redirect path can't keep serving it.
+	h.cache.DeleteLink(ctx, shortKey)
+
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 )
 
 type jsonResponse struct {
@@ -69,4 +70,17 @@ func (c *Codex) errorJSON(w http.ResponseWriter, err error, status ...int) error
 	}
 
 	return c.writeJSON(w, statusCode, payload)
+}
+
+// Helper to parse query integer with a default fallback
+func parseQueryInt(r *http.Request, key string, fallback int32) int32 {
+	valStr := r.URL.Query().Get(key)
+	if valStr == "" {
+		return fallback
+	}
+	val, err := strconv.ParseInt(valStr, 10, 32)
+	if err != nil {
+		return fallback
+	}
+	return int32(val)
 }

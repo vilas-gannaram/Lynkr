@@ -54,8 +54,8 @@ func (c *Cache) Close() {
 	}
 }
 
-// GetURL looks up a shortcode. ok is false on a miss or if caching is disabled.
-func (c *Cache) GetURL(ctx context.Context, shortCode string) (id int64, originalURL string, ok bool) {
+// GetLink looks up a shortcode. ok is false on a miss or if caching is disabled.
+func (c *Cache) GetLink(ctx context.Context, shortCode string) (id int64, originalURL string, ok bool) {
 	if c.rdb == nil {
 		return 0, "", false
 	}
@@ -77,7 +77,7 @@ func (c *Cache) GetURL(ctx context.Context, shortCode string) (id int64, origina
 	return id, url, true
 }
 
-func (c *Cache) SetURL(ctx context.Context, shortCode string, id int64, originalURL string) {
+func (c *Cache) SetLink(ctx context.Context, shortCode string, id int64, originalURL string) {
 	if c.rdb == nil {
 		return
 	}
@@ -88,5 +88,19 @@ func (c *Cache) SetURL(ctx context.Context, shortCode string, id int64, original
 	val := fmt.Sprintf("%d\n%s", id, originalURL)
 	if err := c.rdb.Set(ctx, "url:"+shortCode, val, urlCacheTTL).Err(); err != nil {
 		log.Println("Error writing to cache:", err)
+	}
+}
+
+// DeleteLink evicts a shortcode so a deleted link stops redirecting immediately.
+func (c *Cache) DeleteLink(ctx context.Context, shortCode string) {
+	if c.rdb == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, redisCallTimeout)
+	defer cancel()
+
+	if err := c.rdb.Del(ctx, "url:"+shortCode).Err(); err != nil {
+		log.Println("Error deleting from cache:", err)
 	}
 }

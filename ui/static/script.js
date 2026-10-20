@@ -1,43 +1,43 @@
-const form = document.getElementById("shorten-form");
-const resultBox = document.getElementById("shorten-result");
-const output = document.getElementById("short-url-output");
-const errorBox = document.getElementById("shorten-error");
-const copyBtn = document.getElementById("copy-btn");
+const form = document.getElementById('shorten-form');
+const resultBox = document.getElementById('shorten-result');
+const output = document.getElementById('short-url-output');
+const errorBox = document.getElementById('shorten-error');
+const copyBtn = document.getElementById('copy-btn');
 
 if (form) {
-	form.addEventListener("submit", async (e) => {
+	form.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		errorBox.classList.add("hidden");
-		resultBox.classList.add("hidden");
+		errorBox.classList.add('hidden');
+		resultBox.classList.add('hidden');
 
-		const longURL = document.getElementById("long-url-input").value;
+		const target = document.getElementById('long-url-input').value;
 
 		try {
-			const res = await fetch("/shorten", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ longURL }),
+			const res = await fetch('/api/links', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ target }),
 			});
 
 			const data = await res.json();
 
 			if (!res.ok) {
-				errorBox.textContent = data.message || "Something went wrong.";
-				errorBox.classList.remove("hidden");
+				errorBox.textContent = data.message || 'Something went wrong.';
+				errorBox.classList.remove('hidden');
 				return;
 			}
 
 			output.value = data;
-			resultBox.classList.remove("hidden");
+			resultBox.classList.remove('hidden');
 		} catch (err) {
-			errorBox.textContent = "Network error, please try again.";
-			errorBox.classList.remove("hidden");
+			errorBox.textContent = 'Network error, please try again.';
+			errorBox.classList.remove('hidden');
 		}
 	});
 
-	copyBtn.addEventListener("click", () => {
+	copyBtn.addEventListener('click', () => {
 		navigator.clipboard.writeText(output.value);
-		copyBtn.textContent = "Copied!";
-		setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+		copyBtn.textContent = 'Copied!';
+		setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
 	});
 }

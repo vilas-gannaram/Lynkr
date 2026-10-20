@@ -40,9 +40,11 @@ func (rt *Routes) Setup() http.Handler {
 	mux.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	mux.Get("/", rt.Handlers.HomePage)
-	mux.Post("/shorten", rt.Handlers.ShortenURL)
-	mux.Get("/{shortcode}", rt.Handlers.Redirect)
-	mux.Get("/urls", rt.Handlers.ListURLs)
+	mux.Get("/{code}", rt.Handlers.Redirect)
+
+	mux.Get("/api/links", rt.Handlers.ListLinks)
+	mux.Post("/api/links", rt.Handlers.CreateLink)
+	mux.Delete("/api/links/{code}", rt.Handlers.DeleteLink)
 
 	return mux
 }

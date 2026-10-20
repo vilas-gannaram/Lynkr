@@ -8,16 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Stat struct {
-	ID          int64              `json:"id"`
-	UrlID       int64              `json:"url_id"`
-	Count       pgtype.Int4        `json:"count"`
-	LastUpdated pgtype.Timestamptz `json:"last_updated"`
+type Link struct {
+	ID        int64              `json:"id"`
+	Code      string             `json:"code"`
+	TargetUrl string             `json:"target_url"`
+	Title     pgtype.Text        `json:"title"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-type Url struct {
-	ID          int64              `json:"id"`
-	ShortCode   string             `json:"short_code"`
-	OriginalUrl string             `json:"original_url"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+type LinkStat struct {
+	LinkID        int64              `json:"link_id"`
+	ClickCount    int64              `json:"click_count"`
+	LastClickedAt pgtype.Timestamptz `json:"last_clicked_at"`
 }
